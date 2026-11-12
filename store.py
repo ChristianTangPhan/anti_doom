@@ -46,6 +46,13 @@ class Store:
     def all(self):
         return self.db.execute("SELECT * FROM bridges ORDER BY title").fetchall()
 
+    def remove_by_channel(self, channel_id):
+        """Returns the removed row, or None if the channel wasn't bridged."""
+        row = self.by_channel(channel_id)
+        if row:
+            self.remove(row["thread_id"])
+        return row
+
     def by_channel(self, channel_id):
         return self.db.execute("SELECT * FROM bridges WHERE channel_id = ?", (channel_id,)).fetchone()
 
@@ -67,8 +74,12 @@ class Store:
         self.db.commit()
 
     # ---- seen message IDs ----
-    def mark_seen(self, msg_id):
-        self.db.execute("INSERT OR IGNORE INTO seen (msg_id, seen_at) VALUES (?, ?)", (str(msg_id), time.time()))
+    def mark_seen(self, *msg_ids):
+        """Mark one or more message IDs as seen, in a single commit."""
+        now = time.time()
+        self.db.executemany(
+            "INSERT OR IGNORE INTO seen (msg_id, seen_at) VALUES (?, ?)", [(str(i), now) for i in msg_ids]
+        )
         self.db.commit()
 
     def was_seen(self, msg_id):

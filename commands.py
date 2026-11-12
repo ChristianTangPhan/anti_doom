@@ -47,16 +47,26 @@ class ScanView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             if not only_owner(interaction):
                 return await interaction.response.send_message("Not yours.", ephemeral=True)
-            if thread_id in bot.store.thread_ids():
+            # bot.adding stops a double-click from creating two channels
+            if thread_id in bot.store.thread_ids() or thread_id in bot.adding:
                 return await interaction.response.send_message(f"**{title}** is already bridged.", ephemeral=True)
+            bot.adding.add(thread_id)
             await interaction.response.defer(ephemeral=True)
-            category = await get_category(interaction.guild)
-            channel = await interaction.guild.create_text_channel(
-                channel_name(title), category=category, topic=f"IG chat: {title} (thread {thread_id})"
-            )
-            webhook = await channel.create_webhook(name="anti-doom")
-            # last_seen = the chat's latest activity, so old history isn't dumped in
-            bot.store.add(thread_id, channel.id, webhook.url, title, last_seen)
+            channel = None
+            try:
+                category = await get_category(interaction.guild)
+                channel = await interaction.guild.create_text_channel(
+                    channel_name(title), category=category, topic=f"IG chat: {title} (thread {thread_id})"
+                )
+                webhook = await channel.create_webhook(name="anti-doom")
+                # last_seen = the chat's latest activity, so old history isn't dumped in
+                bot.store.add(thread_id, channel.id, webhook.url, title, last_seen)
+            except Exception:
+                if channel:  # don't leave a half-made channel behind
+                    await channel.delete()
+                raise
+            finally:
+                bot.adding.discard(thread_id)
             await interaction.followup.send(f"Bridged **{title}** → {channel.mention}", ephemeral=True)
 
         return callback
@@ -65,6 +75,13 @@ class ScanView(discord.ui.View):
 def setup(bot):
     tree = bot.tree
     guild = discord.Object(id=config.GUILD_ID)
+
+    async def bridged_row(interaction):
+        """This channel's bridge row, or None after telling the user it isn't bridged."""
+        row = bot.store.by_channel(interaction.channel_id)
+        if row is None:
+            await interaction.response.send_message("This channel isn't bridged.", ephemeral=True)
+        return row
 
     @tree.command(name="scan", description="Show your top unbridged IG chats", guild=guild)
     @app_commands.describe(
@@ -126,9 +143,9 @@ def setup(bot):
     @app_commands.describe(delete_channel="Also delete this Discord channel")
     @app_commands.check(only_owner)
     async def remove(interaction: discord.Interaction, delete_channel: bool = False):
-        row = bot.store.by_channel(interaction.channel_id)
+        row = await bridged_row(interaction)
         if row is None:
-            return await interaction.response.send_message("This channel isn't bridged.", ephemeral=True)
+            return
         bot.store.remove(row["thread_id"])
         if delete_channel:
             await interaction.response.send_message("Removed. Deleting channel…", ephemeral=True)
@@ -139,18 +156,18 @@ def setup(bot):
     @tree.command(name="mute", description="Pause incoming messages for this chat", guild=guild)
     @app_commands.check(only_owner)
     async def mute(interaction: discord.Interaction):
-        row = bot.store.by_channel(interaction.channel_id)
+        row = await bridged_row(interaction)
         if row is None:
-            return await interaction.response.send_message("This channel isn't bridged.", ephemeral=True)
+            return
         bot.store.set_muted(row["thread_id"], True)
         await interaction.response.send_message(f"🔇 Muted **{row['title']}**.", ephemeral=True)
 
     @tree.command(name="unmute", description="Resume incoming messages for this chat", guild=guild)
     @app_commands.check(only_owner)
     async def unmute(interaction: discord.Interaction):
-        row = bot.store.by_channel(interaction.channel_id)
+        row = await bridged_row(interaction)
         if row is None:
-            return await interaction.response.send_message("This channel isn't bridged.", ephemeral=True)
+            return
         # skip whatever arrived while muted
         bot.store.set_muted(row["thread_id"], False, last_seen=time.time())
         await interaction.response.send_message(f"🔊 Unmuted **{row['title']}**.", ephemeral=True)
