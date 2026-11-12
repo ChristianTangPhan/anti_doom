@@ -46,26 +46,36 @@ def message_to_text(m):
     return f"📎 sent {ITEM_LABELS.get(kind, 'something')}"
 
 
-class IG:
-    """All IG calls go through _call(): one at a time, counted against the hourly cap."""
+class CapReached(Exception):
+    """Raised instead of making a request that would go over the hourly cap."""
 
-    def __init__(self, hourly_cap):
+    def __init__(self, wait):
+        self.wait = wait
+        super().__init__(f"hourly cap reached, frees up in {wait:.0f}s")
+
+
+class IG:
+    """All IG calls go through _call(): one at a time, counted against the hourly cap.
+
+    Request times are saved in the database, so restarting the bot doesn't reset the count.
+    """
+
+    def __init__(self, hourly_cap, store, interactive=False):
         self.cl = Client()
         self.cl.delay_range = [1, 3]  # instagrapi best practice: random pause after each request
-        self.lock = asyncio.Lock()    # instagrapi isn't thread-safe, so one call at a time
+        if not interactive:
+            # Running unattended: if IG asks for a code, fail with ChallengeRequired
+            # instead of freezing while waiting for someone to type into the terminal.
+            self.cl.challenge_code_handler = lambda *args, **kwargs: None
+            self.cl.change_password_handler = lambda *args, **kwargs: None
+        self.lock = asyncio.Lock()  # instagrapi isn't thread-safe, so one call at a time
         self.cap = hourly_cap
-        self.calls = deque()          # timestamps of recent requests
+        self.store = store
+        self.calls = deque(store.recent_calls(3600))  # timestamps of recent requests
 
-    def login(self, username, password, verification_code=""):
-        """Blocking. Reuses the saved session so IG sees the same device."""
-        if os.path.exists(SESSION_FILE):
-            self.cl.load_settings(SESSION_FILE)
-        self.cl.login(username, password, verification_code=verification_code)
-        self.cl.dump_settings(SESSION_FILE)
-
-    @property
-    def my_id(self):
-        return str(self.cl.user_id)
+    def _record(self, cost, kind="api"):
+        self.calls.extend([time.time()] * cost)
+        self.store.record_calls(cost, kind)
 
     def calls_last_hour(self):
         now = time.time()
@@ -73,15 +83,33 @@ class IG:
             self.calls.popleft()
         return len(self.calls)
 
+    def cap_wait(self, cost=1):
+        """0 if `cost` more requests fit under the cap, else seconds until they do."""
+        used = self.calls_last_hour()
+        if used + cost <= self.cap:
+            return 0
+        oldest_needed = self.calls[used + cost - self.cap - 1]
+        return max(1.0, 3600 - (time.time() - oldest_needed))
+
+    def login(self, username, password, verification_code=""):
+        """Blocking. Reuses the saved session so IG sees the same device."""
+        if os.path.exists(SESSION_FILE):
+            self.cl.load_settings(SESSION_FILE)
+        self._record(1, "login")
+        self.cl.login(username, password, verification_code=verification_code)
+        self.cl.dump_settings(SESSION_FILE)
+
+    @property
+    def my_id(self):
+        return str(self.cl.user_id)
+
     async def _call(self, fn, *args, cost=1, **kwargs):
         """cost = how many IG requests this call makes (inbox pages are 20 chats each)."""
         async with self.lock:
-            if self.calls and self.calls_last_hour() + cost > self.cap:
-                wait = 3600 - (time.time() - self.calls[0])
-                print(f"IG hourly cap ({self.cap}) reached, waiting {wait:.0f}s")
-                await asyncio.sleep(wait)
-            now = time.time()
-            self.calls.extend([now] * cost)
+            wait = self.cap_wait(cost)
+            if wait > 0:
+                raise CapReached(wait)  # caller decides how to wait, so nothing else is blocked
+            self._record(cost)
             return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def inbox(self, amount, msg_limit):

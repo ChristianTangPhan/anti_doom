@@ -4,13 +4,16 @@
 Description=anti-doom (Instagram chats in Discord)
 After=network-online.target
 Wants=network-online.target
+# Stop restarting after 3 crashes in 15 minutes (no crash-login loops)
+StartLimitIntervalSec=900
+StartLimitBurst=3
 
 [Service]
 User=dudwen
 WorkingDirectory=/home/dudwen/anti_doom
 ExecStart=/home/dudwen/anti_doom/venv/bin/python -u bot.py
 Restart=on-failure
-RestartSec=60
+RestartSec=120
 
 [Install]
 WantedBy=multi-user.target

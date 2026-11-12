@@ -27,3 +27,11 @@ BACKOFF_SECONDS = int(os.environ.get("BACKOFF_SECONDS", "900"))  # pause after a
 
 INBOX_SIZE = int(os.environ.get("INBOX_SIZE", "20"))     # chats per inbox request
 MSG_LIMIT = int(os.environ.get("MSG_LIMIT", "10"))       # recent messages included per chat
+
+# Safety limits
+SENDS_PER_MINUTE = int(os.environ.get("SENDS_PER_MINUTE", "10"))      # Discord -> IG burst limit
+SCAN_COOLDOWN = float(os.environ.get("SCAN_COOLDOWN", "30"))           # seconds between /scan
+MAX_LOGINS_PER_HOUR = int(os.environ.get("MAX_LOGINS_PER_HOUR", "3"))  # refuse to start past this
+MAX_BACKOFF_SECONDS = int(os.environ.get("MAX_BACKOFF_SECONDS", "14400"))  # backoff doubles up to 4 h
+HEARTBEAT_STALE = float(os.environ.get("HEARTBEAT_STALE", "180"))      # another copy counts as alive this long
+STATUS_CHANNEL = os.environ.get("STATUS_CHANNEL", "anti-doom-status")

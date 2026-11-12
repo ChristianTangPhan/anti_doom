@@ -19,6 +19,10 @@ class Store:
                 muted       INTEGER NOT NULL DEFAULT 0,
                 last_seen   REAL NOT NULL DEFAULT 0   -- unix time of newest relayed message
             );
+            CREATE TABLE IF NOT EXISTS ig_calls (
+                at   REAL NOT NULL,                   -- unix time of an IG request
+                kind TEXT NOT NULL                    -- 'api' or 'login'
+            );
             CREATE TABLE IF NOT EXISTS seen (
                 msg_id  TEXT PRIMARY KEY,             -- relayed to Discord, or sent by the bot
                 seen_at REAL NOT NULL
@@ -72,4 +76,25 @@ class Store:
 
     def prune_seen(self, older_than_days=3):
         self.db.execute("DELETE FROM seen WHERE seen_at < ?", (time.time() - older_than_days * 86400,))
+        self.db.commit()
+
+    # ---- IG request log (survives restarts) ----
+    def record_calls(self, count, kind="api"):
+        now = time.time()
+        self.db.executemany("INSERT INTO ig_calls (at, kind) VALUES (?, ?)", [(now, kind)] * count)
+        self.db.commit()
+
+    def recent_calls(self, seconds):
+        rows = self.db.execute(
+            "SELECT at FROM ig_calls WHERE at > ? ORDER BY at", (time.time() - seconds,)
+        ).fetchall()
+        return [r["at"] for r in rows]
+
+    def recent_logins(self, seconds):
+        return self.db.execute(
+            "SELECT COUNT(*) FROM ig_calls WHERE kind = 'login' AND at > ?", (time.time() - seconds,)
+        ).fetchone()[0]
+
+    def prune_calls(self, older_than_days=1):
+        self.db.execute("DELETE FROM ig_calls WHERE at < ?", (time.time() - older_than_days * 86400,))
         self.db.commit()

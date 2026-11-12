@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 
 import config
-from ig import ts
+from ig import CapReached, ts
 
 
 def only_owner(interaction: discord.Interaction) -> bool:
@@ -77,10 +77,21 @@ def setup(bot):
         count: app_commands.Range[int, 1, 25] = 5,
         search: str = None,
     ):
+        since = time.time() - bot.last_scan
+        if since < config.SCAN_COOLDOWN:
+            return await interaction.response.send_message(
+                f"Scan cooldown: try again in {config.SCAN_COOLDOWN - since:.0f}s.", ephemeral=True
+            )
+        bot.last_scan = time.time()
         await interaction.response.defer(ephemeral=True)
         # 20 chats = 1 request. Searching or asking for lots looks deeper (40 = 2 requests).
         depth = 40 if search or count > 10 else config.INBOX_SIZE
-        threads = await bot.ig.inbox(depth, 1)
+        try:
+            threads = await bot.ig.inbox(depth, 1)
+        except CapReached as e:
+            return await interaction.followup.send(
+                f"Hourly IG limit reached. Try again in {e.wait / 60:.0f} min.", ephemeral=True
+            )
         bridged = bot.store.thread_ids()
         query = search.lower().strip() if search else None
 
@@ -153,6 +164,7 @@ def setup(bot):
             f"IG requests last hour: {bot.ig.calls_last_hour()} / {config.HOURLY_CAP}",
             f"Last poll: {last}",
             f"Mode: {'active' if bot.is_active() else 'idle'}",
+            f"Sends waiting: {bot.send_queue.qsize()}",
             f"Last error: {bot.last_error or 'none'}",
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)

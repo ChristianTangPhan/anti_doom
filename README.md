@@ -19,7 +19,17 @@ Read and reply to your Instagram chats from Discord, so you don't open the IG ap
 | `/mute` / `/unmute` | Pause/resume incoming messages for this channel's chat |
 | `/status` | Requests this hour, last poll, active/idle, last error |
 
-Type in a bridged channel to send as yourself. ✅ = sent, ⚠️ = failed.
+Type in a bridged channel to send as yourself. ✅ = sent, ⏳ = queued (rate limit), ⚠️ = failed.
+
+## Safety
+
+- **Hourly cap** (`HOURLY_CAP=150`) counts every IG request (polls, sends, scans, logins) and is saved in the database, so restarts don't reset it.
+- **Login guard**: refuses to start after `MAX_LOGINS_PER_HOUR` (3) logins in an hour, so a crash loop can't keep logging in.
+- **One copy only**: a heartbeat in `#anti-doom-status`. A second copy (even on another computer) exits if the first is alive.
+- **Backoff**: any "slow down" from IG pauses 15 min, doubling each time up to 4 h. Other errors back off too. You get a DM.
+- **No freezing on challenges**: if IG asks for a code, the bot DMs you instead of waiting on the terminal. Run `login.py` to fix.
+- **Send limit**: max `SENDS_PER_MINUTE` (10) Discord → IG; extras queue in order.
+- **Scan cooldown**: `/scan` at most once per `SCAN_COOLDOWN` (30 s).
 
 ## Setup
 

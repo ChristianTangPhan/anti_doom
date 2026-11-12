@@ -3,8 +3,9 @@ from instagrapi.exceptions import TwoFactorRequired
 
 import config
 from ig import IG
+from store import Store
 
-ig = IG(hourly_cap=999)
+ig = IG(hourly_cap=999, store=Store(), interactive=True)  # interactive: asks you for codes
 try:
     ig.login(config.IG_USERNAME, config.IG_PASSWORD)
 except TwoFactorRequired:
