@@ -1,0 +1,16 @@
+# Copy to /etc/systemd/system/anti-doom.service on dudbox.
+# Replace "dudwen" and the paths with your actual username / folder.
+[Unit]
+Description=anti-doom (Instagram chats in Discord)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dudwen
+WorkingDirectory=/home/dudwen/anti_doom
+ExecStart=/home/dudwen/anti_doom/venv/bin/python -u bot.py
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

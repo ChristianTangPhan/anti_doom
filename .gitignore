@@ -1,0 +1,10 @@
+# secrets, login session, local data
+.env
+ig_session.json
+anti_doom.db
+
+# python
+venv/
+.venv/
+__pycache__/
+*.pyc
