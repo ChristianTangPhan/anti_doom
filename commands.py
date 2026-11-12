@@ -67,18 +67,39 @@ def setup(bot):
     guild = discord.Object(id=config.GUILD_ID)
 
     @tree.command(name="scan", description="Show your top unbridged IG chats", guild=guild)
+    @app_commands.describe(
+        count="How many chats to show (1-25, default 5)",
+        search="Only chats whose name or usernames contain this",
+    )
     @app_commands.check(only_owner)
-    async def scan(interaction: discord.Interaction):
+    async def scan(
+        interaction: discord.Interaction,
+        count: app_commands.Range[int, 1, 25] = 5,
+        search: str = None,
+    ):
         await interaction.response.defer(ephemeral=True)
-        threads = await bot.ig.inbox(config.INBOX_SIZE, 1)
+        # 20 chats = 1 request. Searching or asking for lots looks deeper (40 = 2 requests).
+        depth = 40 if search or count > 10 else config.INBOX_SIZE
+        threads = await bot.ig.inbox(depth, 1)
         bridged = bot.store.thread_ids()
+        query = search.lower().strip() if search else None
+
+        def matches(t):
+            if not query:
+                return True
+            names = [thread_title(t, bot.ig.my_id)] + [u.username for u in t.users]
+            return any(query in n.lower() for n in names)
+
         chats = [
             (str(t.id), thread_title(t, bot.ig.my_id), ts(t.last_activity_at))
             for t in threads
-            if str(t.id) not in bridged
-        ][:5]
+            if str(t.id) not in bridged and matches(t)
+        ][:count]
         if not chats:
-            return await interaction.followup.send("No unbridged chats in your recent inbox.", ephemeral=True)
+            what = f'matching "{search}"' if search else "unbridged"
+            return await interaction.followup.send(
+                f"No {what} chats in your {depth} most recent.", ephemeral=True
+            )
         await interaction.followup.send("Pick a chat to bridge:", view=ScanView(bot, chats), ephemeral=True)
 
     @tree.command(name="list", description="List bridged chats", guild=guild)

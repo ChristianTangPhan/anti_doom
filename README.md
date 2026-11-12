@@ -13,7 +13,7 @@ Read and reply to your Instagram chats from Discord, so you don't open the IG ap
 
 | Command | Does |
 |---|---|
-| `/scan` | Top 5 unbridged chats as buttons. Click to bridge (creates channel + webhook). |
+| `/scan [count] [search]` | Unbridged chats as buttons (default 5, max 25). `search` filters by name/username, e.g. `/scan search:sarah`. Click to bridge. |
 | `/list` | Bridged chats |
 | `/remove [delete_channel]` | Run in a chat's channel to unbridge it |
 | `/mute` / `/unmute` | Pause/resume incoming messages for this channel's chat |

@@ -73,17 +73,22 @@ class IG:
             self.calls.popleft()
         return len(self.calls)
 
-    async def _call(self, fn, *args, **kwargs):
+    async def _call(self, fn, *args, cost=1, **kwargs):
+        """cost = how many IG requests this call makes (inbox pages are 20 chats each)."""
         async with self.lock:
-            if self.calls_last_hour() >= self.cap:
+            if self.calls and self.calls_last_hour() + cost > self.cap:
                 wait = 3600 - (time.time() - self.calls[0])
                 print(f"IG hourly cap ({self.cap}) reached, waiting {wait:.0f}s")
                 await asyncio.sleep(wait)
-            self.calls.append(time.time())
+            now = time.time()
+            self.calls.extend([now] * cost)
             return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def inbox(self, amount, msg_limit):
-        return await self._call(self.cl.direct_threads, amount=amount, thread_message_limit=msg_limit)
+        pages = -(-amount // 20)  # ceiling division: 40 chats = 2 requests
+        return await self._call(
+            self.cl.direct_threads, amount=amount, thread_message_limit=msg_limit, cost=pages
+        )
 
     async def thread_messages(self, thread_id, amount=50):
         return await self._call(self.cl.direct_messages, int(thread_id), amount)
